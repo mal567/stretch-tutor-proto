@@ -150,11 +150,15 @@ function runMission(plan, opts = {}) {
         <div class="card">
           <div class="qnum">${mode === 'review' ? '🔁 Quick review' : mode === 'stretch' ? '🚀 Challenge' : '🆕 New stuff'}</div>
           <div class="qtext" id="qt">${esc(it.stem)}</div>
-          <button class="ghost" id="spk" style="margin-top:10px;font-size:.95rem;padding:8px 14px">🔊 Read it to me</button>
+          <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+            <button class="ghost" id="spk" style="font-size:.95rem;padding:8px 14px">🔊 Read it to me</button>
+            ${opts.placement ? '<button class="ghost" id="skip" style="font-size:.95rem;padding:8px 14px">🤔 Not sure yet</button>' : ''}
+          </div>
           <div id="ansarea"></div>
         </div>
       </div>`);
     el('spk').onclick = () => speak(speakable(it.stem));
+    if (el('skip')) el('skip').onclick = () => grade(false, null, true);
     if (it.kind === 'mcq') drawMCQ(it); else drawPad(it);
   }
 
@@ -190,18 +194,24 @@ function runMission(plan, opts = {}) {
     upd();
   }
 
-  function grade(ok, shown) {
+  function grade(ok, shown, skipped = false) {
     const it = plan[i].item || plan[i];
     // lock buttons
     el('ansarea').querySelectorAll('button').forEach((b) => (b.disabled = true));
+    if (el('spk')) el('spk').disabled = true;
+    if (el('skip')) el('skip').disabled = true;
     if (opts.placement) placementResults.push({ conceptId: it.conceptId, correct: ok });
     else { results.push(ok); updateAttempt(state, it, ok); if (ok) correctCount++; }
     const fb = el('fb');
-    fb.innerHTML = `<div class="feed ${ok ? 'ok' : 'no'}">${ok ? '✅ Yes! ' : '❌ Not quite. '}${esc(it.explain)}</div>
+    fb.innerHTML = `${skipped
+        ? `<div class="feed no">🤔 No worries — that's really useful!</div>`
+        : `<div class="feed ${ok ? 'ok' : 'no'}">${ok ? '✅ Yes! ' : '❌ Not quite. '}${esc(it.explain)}</div>`}
       <button class="big" id="nx" style="width:100%;margin-top:12px">${++i >= plan.length ? 'Finish 🎉' : 'Next ➡️'}</button>`;
-    if (!ok) speak(speakable(it.explain));
+    if (!ok && !skipped) speak(speakable(it.explain));
     if (ok) { try { navigator.vibrate?.(40); } catch {} }
     el('nx').onclick = step;
+    // the Next button must be visible without hunting for it (tablets, phones)
+    requestAnimationFrame(() => el('nx').scrollIntoView({ behavior: 'smooth', block: 'center' }));
   }
 
   step();
