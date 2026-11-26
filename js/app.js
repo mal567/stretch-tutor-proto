@@ -123,6 +123,7 @@ function runMission(plan, opts = {}) {
   const LIMIT = 10 * 60 * 1000;
   let i = 0, results = [], correctCount = 0;
   const placementResults = [];
+  let pokeTimer = null;
 
   function over() {
     const spent = Date.now() - t0;
@@ -137,7 +138,19 @@ function runMission(plan, opts = {}) {
     }
   }
 
+  // Stillness nudge: after N seconds with no taps, gently offer a way out.
+  // Never auto-advances, never counts down, fires once per question.
+  const NUDGE_MS = opts.placement ? 30_000 : 45_000;
+  function armNudge() {
+    clearTimeout(pokeTimer);
+    pokeTimer = setTimeout(() => {
+      const n = document.getElementById('nudge');
+      if (n) n.style.display = 'block';
+    }, NUDGE_MS);
+  }
+
   function step() {
+    clearTimeout(pokeTimer);
     if (i >= plan.length || Date.now() - t0 > LIMIT) return over();
     const p = plan[i];
     const it = p.item || p; // daily sessions wrap items; placement passes bare items
@@ -154,12 +167,18 @@ function runMission(plan, opts = {}) {
             <button class="ghost" id="spk" style="font-size:.95rem;padding:8px 14px">🔊 Read it to me</button>
             ${opts.placement ? '<button class="ghost" id="skip" style="font-size:.95rem;padding:8px 14px">🤔 Not sure yet</button>' : ''}
           </div>
+          <div id="nudge" style="display:none;margin-top:12px;background:#fef3c7;border-radius:14px;padding:10px 14px;font-size:1rem">
+            ${opts.placement
+              ? 'Take your time 🙂 or tap <b>Not sure yet</b> to move on — either is fine!'
+              : 'Stuck? Try the 🔊 button, or take your best guess — wrong answers help too! 🙂'}
+          </div>
           <div id="ansarea"></div>
         </div>
       </div>`);
-    el('spk').onclick = () => speak(speakable(it.stem));
-    if (el('skip')) el('skip').onclick = () => grade(false, null, true);
+    el('spk').onclick = () => { armNudge(); speak(speakable(it.stem)); };
+    if (el('skip')) el('skip').onclick = () => { armNudge(); grade(false, null, true); };
     if (it.kind === 'mcq') drawMCQ(it); else drawPad(it);
+    armNudge();
   }
 
   function drawMCQ(it) {
@@ -167,6 +186,7 @@ function runMission(plan, opts = {}) {
     el('ansarea').innerHTML = `<div class="opts ${cols}">${it.options.map((o) => `<button data-o="${esc(o)}">${esc(o)}</button>`).join('')}</div><div id="fb"></div>`;
     el('ansarea').querySelectorAll('.opts button').forEach((b) => {
       b.onclick = () => {
+        armNudge(); // any tap resets the stillness clock
         const chosen = b.dataset.o;
         grade(chosen === String(it.answer), chosen);
       }
@@ -184,6 +204,7 @@ function runMission(plan, opts = {}) {
     const upd = () => el('ab').innerHTML = `<span style="color:#6366f1">${it.unit || ''}</span> ${buf || '\u00a0'}`;
     el('ansarea').querySelectorAll('.pad button').forEach((b) => {
       b.onclick = () => {
+        armNudge(); // any tap resets the stillness clock
         const k = b.dataset.k;
         if (k === '⌫') buf = buf.slice(0, -1);
         else if (k === 'ok') { if (buf) grade(Number(buf) === it.answer, buf); return; }
@@ -195,6 +216,7 @@ function runMission(plan, opts = {}) {
   }
 
   function grade(ok, shown, skipped = false) {
+    clearTimeout(pokeTimer); // question is settled — no more nudges
     const it = plan[i].item || plan[i];
     // lock buttons
     el('ansarea').querySelectorAll('button').forEach((b) => (b.disabled = true));
