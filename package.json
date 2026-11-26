@@ -1,0 +1,12 @@
+{
+  "name": "edutech-proto",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Prototype PWA: adaptive maths stretch for UK Year 4 (Y3–Y5 band)",
+  "scripts": {
+    "serve": "python3 -m http.server 8799",
+    "test": "node test/smoke.mjs",
+    "icons": "node scripts/make-icons.mjs"
+  }
+}
