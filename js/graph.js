@@ -116,14 +116,15 @@ export function buildGraph(concepts) {
   return { byId, dependents, strandOrder, concepts };
 }
 
-// Placement anchors: per strand — the Y3/Y4 boundary concept to probe first,
-// with one step down / up for branching.
+// Placement anchors: per strand — the Y3/Y4 boundary concept to probe first
+// (at a FRIENDLY rung), with one step down / up for branching. Anchors are
+// chosen for quick, low-working-memory probes: no long column arithmetic.
 export const ANCHORS = {
   place: { anchor: 'pv4', down: 'pv3', up: 'round4' },
-  addsub: { anchor: 'colsub3', down: 'as2', up: 'coladd4' },
+  addsub: { anchor: 'coladd3', down: 'as2', up: 'colsub3' },
   multdiv: { anchor: 'tt12', down: 'tt348', up: 'lm1' },
   frac: { anchor: 'frac4', down: 'frac3', up: 'dec4' },
-  measure: { anchor: 'money4', down: 'time3', up: 'perim4' },
+  measure: { anchor: 'perim4', down: 'time3', up: 'money4' },
 };
 
 export const GRAPH = buildGraph(CONCEPTS);

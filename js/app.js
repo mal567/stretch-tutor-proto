@@ -2,8 +2,8 @@
 import { STRANDS, GRAPH } from './graph.js';
 import { makeItem } from './gen.js';
 import {
-  defaultState, quickPlace, applyPlacement, buildDailySession,
-  updateAttempt, finishSession, parentSummary,
+  defaultState, startPlacement, placementFollowUp, applyPlacementResult, finishPlacement,
+  buildDailySession, updateAttempt, finishSession, parentSummary,
 } from './engine.js';
 import { loadState, saveState, clearAll } from './db.js';
 
@@ -92,7 +92,7 @@ function viewPlacementIntro() {
       <p class="muted" style="max-width:480px;margin:0 auto">About 10 questions so we can find what's easy, what's just right, and what's next. Don't worry about wrong answers — they help us!</p>
       <button class="big" id="pl" style="width:100%;max-width:420px;margin:0 auto">Start exploring</button>
     </div>`);
-  el('pl').onclick = () => runMission(quickPlace(state), { placement: true });
+  el('pl').onclick = () => runMission(startPlacement(state), { placement: true });
 }
 
 // ---------- home ----------
@@ -122,13 +122,12 @@ function runMission(plan, opts = {}) {
   const t0 = Date.now();
   const LIMIT = 10 * 60 * 1000;
   let i = 0, results = [], correctCount = 0;
-  const placementResults = [];
   let pokeTimer = null;
 
   function over() {
     const spent = Date.now() - t0;
     if (opts.placement) {
-      applyPlacement(state, placementResults);
+      finishPlacement(state);
       saveState(state);
       viewPlacementDone();
     } else {
@@ -161,7 +160,7 @@ function runMission(plan, opts = {}) {
         <div class="row spread"><div class="muted">Question ${n} of ${total}</div><div class="muted">⏱ ${Math.max(0, Math.ceil((LIMIT - (Date.now() - t0)) / 60000))} min</div></div>
         <div class="progress"><div style="width:${(i / total) * 100}%"></div></div>
         <div class="card">
-          <div class="qnum">${mode === 'review' ? '🔁 Quick review' : mode === 'stretch' ? '🚀 Challenge' : '🆕 New stuff'}</div>
+          <div class="qnum">${mode === 'probe' || mode === 'place-confirm' ? '🧭 Explorer' : mode === 'review' ? '🔁 Quick review' : mode === 'stretch' ? '🚀 Challenge' : '🆕 New stuff'}</div>
           <div class="qtext" id="qt">${esc(it.stem)}</div>
           <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
             <button class="ghost" id="spk" style="font-size:.95rem;padding:8px 14px">🔊 Read it to me</button>
@@ -217,20 +216,37 @@ function runMission(plan, opts = {}) {
 
   function grade(ok, shown, skipped = false) {
     clearTimeout(pokeTimer); // question is settled — no more nudges
-    const it = plan[i].item || plan[i];
+    const p = plan[i];
+    const it = p.item || plan[i];
     // lock buttons
     el('ansarea').querySelectorAll('button').forEach((b) => (b.disabled = true));
     if (el('spk')) el('spk').disabled = true;
     if (el('skip')) el('skip').disabled = true;
-    if (opts.placement) placementResults.push({ conceptId: it.conceptId, correct: ok });
-    else { results.push(ok); updateAttempt(state, it, ok); if (ok) correctCount++; }
+
+    if (opts.placement) {
+      // adaptive probe chain: probe → one confirm follow-up → frontier set
+      if (p.mode === 'probe') {
+        const fu = placementFollowUp(state, p.strand, ok);
+        plan.splice(i + 1, 0, { mode: 'place-confirm', item: fu.item, strand: fu.strand,
+          targetIfCorrect: fu.targetIfCorrect, targetIfWrong: fu.targetIfWrong });
+      } else if (p.mode === 'place-confirm') {
+        applyPlacementResult(state, p.strand, ok ? p.targetIfCorrect : p.targetIfWrong);
+      }
+    } else {
+      results.push(ok); updateAttempt(state, it, ok); if (ok) correctCount++;
+    }
+
     const fb = el('fb');
     fb.innerHTML = `${skipped
-        ? `<div class="feed no">🤔 No worries — that's really useful!</div>`
-        : `<div class="feed ${ok ? 'ok' : 'no'}">${ok ? '✅ Yes! ' : '❌ Not quite. '}${esc(it.explain)}</div>`}
-      <button class="big" id="nx" style="width:100%;margin-top:12px">${++i >= plan.length ? 'Finish 🎉' : 'Next ➡️'}</button>`;
-    if (!ok && !skipped) speak(speakable(it.explain));
+        ? `<div class="feed no">Skipping is what good explorers do! 🧭</div>`
+        : `<div class="feed ${ok ? 'ok' : 'no'}">${ok ? '✅ Yes! ' : '❌ Not quite. '}${esc(it.explain)}
+           <button class="ghost" id="hear" style="font-size:.85rem;padding:5px 10px;margin-left:6px">🔊 hear it</button></div>`}
+      <button class="big" id="nx" style="width:100%;margin-top:12px">${i + 1 >= plan.length ? 'Finish 🎉' : 'Next ➡️'}</button>`;
+    // voice is ALWAYS opt-in: nothing is ever spoken automatically on a wrong
+    // answer (child feedback: spoken corrections felt like public shaming)
+    if (el('hear')) el('hear').onclick = () => speak(speakable(it.explain));
     if (ok) { try { navigator.vibrate?.(40); } catch {} }
+    i = i + 1;
     el('nx').onclick = step;
     // the Next button must be visible without hunting for it (tablets, phones)
     requestAnimationFrame(() => el('nx').scrollIntoView({ behavior: 'smooth', block: 'center' }));
@@ -303,7 +319,7 @@ function viewParent() {
       <h3 style="margin:8px 0 4px">Recent sessions</h3>
       <table class="pw">${s.sessions.slice(-7).reverse().map((x) => `<tr><td>${new Date(x.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${x.correct}/${x.total}</td><td>${Math.round(100 * x.correct / x.total)}%</td></tr>`).join('') || '<tr><td class="muted">none yet</td></tr>'}</table>
       <p class="muted" style="font-size:.85rem">Prototype note: this summary, plus coins and streaks, is the stub of the milestone-ledger rewards layer. The maths engine (what's mastered, what's due, what's next) is deliberate and fully local — no AI runs during practice.</p>
-      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.1.7</b> (if this doesn't say v0.1.7, fully close and reopen the app twice)</p>
+      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.1.8</b> (if this doesn't say v0.1.8, fully close and reopen the app twice)</p>
       <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="rst" class="ghost" style="color:#b91c1c">Reset everything</button></div>
       <button id="bk2" style="margin-top:14px">⬅️ Back</button>
     </div>`);

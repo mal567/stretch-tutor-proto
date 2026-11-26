@@ -4,7 +4,7 @@
 // 3. engine: placement applies, sessions build, mastery advances
 import { CONCEPTS, GRAPH, STRANDS, ANCHORS, buildGraph } from '../js/graph.js';
 import { makeItem } from '../js/gen.js';
-import { defaultState, quickPlace, applyPlacement, buildDailySession, updateAttempt, finishSession } from '../js/engine.js';
+import { defaultState, startPlacement, placementFollowUp, applyPlacementResult, finishPlacement, buildDailySession, updateAttempt, finishSession } from '../js/engine.js';
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error('FAIL:', msg); } };
@@ -43,14 +43,36 @@ for (const c of CONCEPTS) {
 }
 console.log(`generators: ${mcqCount} mcq + ${numCount} numeric items produced ok`);
 
-// 3. engine
+// 3. engine — placement: one friendly probe per strand + one follow-up
 const st = defaultState('TestKid', 4);
-const probes = quickPlace(st);
-ok(probes.length === STRANDS.length * 2, `probe count ${probes.length}`);
-const res = probes.map((p) => ({ conceptId: p.conceptId, correct: p.conceptId !== 'money4#fail' }));
-applyPlacement(st, probes.map((p, i) => ({ conceptId: p.conceptId, correct: i % 3 !== 0 })));
+const probes = startPlacement(st);
+ok(probes.length === STRANDS.length, `probe count ${probes.length}`);
+ok(probes.every((p) => p.mode === 'probe' && p.item), 'probes well-formed');
+// path A: all probes right → follow-ups at rung 1 of the up concept; confirm → up
+for (const p of probes) {
+  const fu = placementFollowUp(st, p.strand, true);
+  ok(fu && fu.item && fu.item.rung === 1, `up follow-up easy rung (${p.strand})`);
+  applyPlacementResult(st, p.strand, fu.targetIfCorrect);
+}
+finishPlacement(st);
 ok(st.placement.done, 'placement done');
-ok(STRANDS.every((s) => st.strands[s.id].frontier), 'frontiers set');
+ok(STRANDS.every((s) => st.strands[s.id].frontier === ANCHORS[s.id].up), 'all-right path reaches up concepts');
+// path B: probes wrong → follow-ups at down concept; confirm right → anchor
+const st2 = defaultState('TestKid2', 4);
+for (const p of startPlacement(st2)) {
+  const fu = placementFollowUp(st2, p.strand, false);
+  applyPlacementResult(st2, p.strand, fu.targetIfCorrect);
+  const fu2 = null;
+}
+finishPlacement(st2);
+ok(STRANDS.every((s) => st2.strands[s.id].frontier === ANCHORS[s.id].anchor), 'wrong-probe + good-confirm lands at anchor');
+// path C: probes wrong, confirm wrong → down
+const st3 = defaultState('TestKid3', 4);
+for (const p of startPlacement(st3)) {
+  const fu = placementFollowUp(st3, p.strand, false);
+  applyPlacementResult(st3, p.strand, fu.targetIfWrong);
+}
+ok(STRANDS.every((s) => st3.strands[s.id].frontier === ANCHORS[s.id].down), 'double-wrong lands down');
 
 let sess = buildDailySession(st);
 ok(sess.length >= 5 && sess.length <= 14, `session size ${sess.length}`);

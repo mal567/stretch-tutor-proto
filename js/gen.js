@@ -147,15 +147,32 @@ H.coladd = (p, r) => {
 
 H.colsub = (p, r) => {
   const d = p.digits;
-  let a = rnd(10 ** (d - 1), 10 ** d - 1);
-  let b = rnd(10 ** (d - 2), 10 ** (d - 1) - 1);
-  if (!b || a === b) b = Math.max(1, a - rnd(100, 999));
-  if (a <= b) [a, b] = [b, a];
-  if (p.zeroCross && r >= 3) { a = Number(String(a)[0] + '0'.repeat(d - 1)) + rnd(0, 9); } // e.g. 4007
-  if (a <= b) a = b + rnd(100, 5000);
+  // count digit-wise borrows (b sits on the low d-1 columns)
+  const cntBorrows = (a, b) => {
+    const A = String(a).padStart(d, '0').split('').map(Number);
+    const B = String(b).padStart(d, '0').split('').map(Number);
+    let c = 0;
+    for (let k = 1; k < d; k++) if (B[k] > A[k]) c++;
+    return c;
+  };
+  // r1: guaranteed no borrowing. r2: 1–2 borrows. r3+: borrows, incl. zeros.
+  let a = 0, b = 1;
+  for (let t = 0; t < 80; t++) {
+    a = rnd(10 ** (d - 1), 10 ** d - 1);
+    if (p.zeroCross && r >= 3 && Math.random() < 0.5) a = Number(String(a)[0] + '0'.repeat(d - 1)) + rnd(0, 9);
+    b = rnd(10 ** (d - 2), 10 ** (d - 1) - 1);
+    if (a <= b) continue;
+    const c = cntBorrows(a, b);
+    if (r <= 1 && c === 0) break;
+    if (r === 2 && c >= 1 && c <= 2) break;
+    if (r >= 3 && c >= 1) break;
+  }
+  if (a <= b) a = b + rnd(100, 1000);
   const ans = a - b;
   return { stem: `${fmt(a)} − ${fmt(b)} = ?`, answer: ans,
-    hint: r >= 3 ? 'Careful with zeros — you may need to borrow.' : 'Subtract the ones first; borrow if needed.',
+    hint: r <= 1 ? 'No borrowing needed — subtract each column.' :
+      (p.zeroCross && r >= 3) ? 'Careful with zeros — you may need to borrow twice.' :
+      'Subtract the ones first; borrow if needed.',
     explain: `${fmt(a)} − ${fmt(b)} = ${fmt(ans)}.` };
 };
 
@@ -291,14 +308,23 @@ H.decimals = (p, r) => {
 
 H.decAS = (p, r) => {
   const money = (v) => `£${v.toFixed(2)}`;
-  if (r <= 3) {
-    const a = rnd(99, 4999) / 100, b = rnd(99, 2999) / 100; const ans = a + b;
-    return { stem: `${money(a)} + ${money(b)} = £ ?`, answer: Math.round(ans * 100) / 100,
-      hint: 'Add pounds and pence — use the . button for pence.', explain: `${money(a)} + ${money(b)} = ${money(ans)}.`, unit: '£' };
-  }
-  const paid = rnd(10, 50); const cost = rnd(199, 4999) / 100; const ans = paid - cost;
-  return { stem: `A book costs ${money(cost)}. You pay with £${paid}. How much change?`, answer: Math.round(ans * 100) / 100,
-    hint: 'Subtract the price from what you paid. Use the . button for pence.', explain: `£${paid} − ${money(cost)} = ${money(ans)}.`, unit: '£' };
+  const r2 = (v) => Math.round(v * 100) / 100;
+  // Ladder: whole pounds → pence → tenths → two decimals → change from notes
+  if (r === 1) { const a = rnd(2, 20), b = rnd(2, 39); const ans = a + b;
+    return { stem: `£${a} + £${b} = £?`, answer: ans, unit: '£',
+      hint: 'Just add the whole pounds.', explain: `£${a} + £${b} = £${ans}.` }; }
+  if (r === 2) { const a = rnd(10, 49), b = rnd(10, 49); const ans = a + b;
+    return { stem: `${a}p + ${b}p = ? (in pence)`, answer: ans, unit: 'p',
+      hint: 'Add the two pence numbers.', explain: `${a}p + ${b}p = ${ans}p.` }; }
+  if (r === 3) { const a = rnd(11, 49) / 10, b = rnd(11, 49) / 10; const ans = r2(a + b);
+    return { stem: `£${a.toFixed(2)} + £${b.toFixed(2)} = £?`, answer: ans, unit: '£',
+      hint: 'Add the 10ps, then the pounds.', explain: `£${a.toFixed(2)} + £${b.toFixed(2)} = £${ans.toFixed(2)}.` }; }
+  if (r === 4) { const a = rnd(199, 4999) / 100, b = rnd(199, 4999) / 100; const ans = r2(a + b);
+    return { stem: `${money(a)} + ${money(b)} = £?`, answer: ans, unit: '£',
+      hint: 'Add the pence; carry into the pounds.', explain: `${money(a)} + ${money(b)} = ${money(ans)}.` }; }
+  const paid = rnd(20, 50); const cost = rnd(199, 4999) / 100; const ans = r2(paid - cost);
+  return { stem: `A book costs ${money(cost)}. You pay with £${paid}. How much change?`, answer: ans, unit: '£',
+    hint: 'Subtract the price from what you paid.', explain: `£${paid} − ${money(cost)} = ${money(ans)}.` };
 };
 
 H.pct = (p, r) => {

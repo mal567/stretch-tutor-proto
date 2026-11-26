@@ -48,40 +48,40 @@ function addCoins(state, n, type, note) {
 }
 
 // ---------------- placement ----------------
-export function quickPlace(state) {
-  const items = [];
+// Gentle + adaptive: ONE friendly probe per strand (anchor at rung 2),
+// then at most one confirm follow-up (easier/harder based on the probe).
+// 5–10 items total, most children ~7, nothing that takes 90 seconds.
+export function startPlacement(state) {
+  state.placement.done = false;
+  const probes = [];
   for (const s of STRANDS) {
     const a = ANCHORS[s.id];
-    const c = GRAPH.byId.get(a.anchor);
-    for (let i = 0; i < 2; i++) items.push(makeItem(c, 3));
+    probes.push({ mode: 'probe', strand: s.id, item: makeItem(GRAPH.byId.get(a.anchor), 2) });
   }
-  return items;
+  return probes;
 }
 
-export function applyPlacement(state, results) {
-  // results: [{ conceptId, correct }]
-  const byStrand = {};
-  for (const r of results) {
-    const c = GRAPH.byId.get(r.conceptId);
-    byStrand[c.strand] = byStrand[c.strand] || [];
-    byStrand[c.strand].push(r.correct);
+export function placementFollowUp(state, strandId, probeCorrect) {
+  const a = ANCHORS[strandId];
+  if (probeCorrect) {
+    // reached the probe comfortably → try one item of the next concept up, at its easiest rung
+    return { item: makeItem(GRAPH.byId.get(a.up), 1), strand: strandId,
+      targetIfCorrect: a.up, targetIfWrong: a.anchor };
   }
-  for (const s of STRANDS) {
-    const a = ANCHORS[s.id];
-    const res = byStrand[s.id];
-    const score = res ? res.filter(Boolean).length : 0;
-    let target = a.anchor;
-    if (res && res.length >= 2 && score === 2) target = a.up;         // strong → reach up
-    if (res && res.length >= 2 && score === 0) target = a.down;        // shaky → step down
-    state.strands[s.id].frontier = target;
-    // record evidence as first mastery state
-    const c = concept(state, target);
-    c.attempts = 1;
-    if (score >= 1) { c.correct = 1; c.streak = 1; }
-    state.frontierRung[s.id] = 2;
-  }
+  return { item: makeItem(GRAPH.byId.get(a.down), 2), strand: strandId,
+    targetIfCorrect: a.anchor, targetIfWrong: a.down };
+}
+
+export function applyPlacementResult(state, strandId, target) {
+  state.strands[strandId].frontier = target;
+  const c = concept(state, target);
+  c.attempts = Math.max(1, c.attempts);
+  state.frontierRung[strandId] = 2;
+}
+
+export function finishPlacement(state) {
   state.placement.done = true;
-  addCoins(state, 5, 'placement', 'First mission complete');
+  addCoins(state, 5, 'placement', 'Explore complete');
 }
 
 // ---------------- daily session ----------------
