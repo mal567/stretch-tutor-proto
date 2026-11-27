@@ -51,32 +51,35 @@ window.addEventListener('error', (e) => {
 const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 function render(html) { $app.innerHTML = html; }
 function el(id) { return document.getElementById(id); }
-// ---- speech: prefer an English-accent voice; McGroo gets a touch of gravitas
-let voicesReady = false;
+// ---- speech: prefer an English-accent voice; McGroo gets a touch of gravitas.
+// Android-hardened: cancel-then-speak in the same tick can leave the engine
+// silent, so the speak is deferred ~60ms; property handler over addEventListener.
 let gbVoices = [];
 function loadVoices() {
   try {
     gbVoices = speechSynthesis.getVoices().filter((v) =>
       /^en(-|_)?GB/i.test(v.lang) || /Google UK English|Daniel|Serena|Kate|United Kingdom/i.test(v.name));
-    voicesReady = gbVoices.length > 0;
   } catch {}
 }
-if ('speechSynthesis' in window) {
-  loadVoices();
-  speechSynthesis.addEventListener('voiceschanged', loadVoices);
-}
+try {
+  if ('speechSynthesis' in window) {
+    loadVoices();
+    if (typeof speechSynthesis.onvoiceschanged !== 'undefined') speechSynthesis.onvoiceschanged = loadVoices;
+  }
+} catch {}
 const speak = (text, opts = {}) => {
   try {
+    if (!('speechSynthesis' in window)) return;
+    if (!gbVoices.length) loadVoices();
     const u = new SpeechSynthesisUtterance(text);
-    if (!voicesReady) loadVoices();
-    if (gbVoices.length) {
-      u.voice = gbVoices.find((v) => /Female|Serena|Kate/i.test(v.name)) || gbVoices.find((v) => /Male|Daniel/i.test(v.name)) || gbVoices[0];
-    }
-    u.lang = 'en-GB';
+    const pick = gbVoices.find((v) => /Female|Serena|Kate/i.test(v.name))
+      || gbVoices.find((v) => /Male|Daniel/i.test(v.name))
+      || gbVoices[0];
+    if (pick) { u.voice = pick; u.lang = pick.lang || 'en-GB'; } else { u.lang = 'en-GB'; }
     u.rate = opts.mcGroo ? 0.92 : 0.95;
     u.pitch = opts.mcGroo ? 0.8 : 1;
     speechSynthesis.cancel();
-    speechSynthesis.speak(u);
+    setTimeout(() => { try { speechSynthesis.speak(u); } catch {} }, 60);
   } catch {}
 };
 // Speech engines mangle maths symbols — say the question in words.
@@ -131,7 +134,8 @@ function viewIntro() {
   render(`
     <div class="view" style="justify-content:center;text-align:center;gap:18px">
       <div style="display:flex;justify-content:center">${MCGROO_SVG}</div>
-      <h1 id="it1" style="opacity:1;transition:opacity .9s">Hi, I'm Stretch McGroo.</h1>
+      <h1 id="it1" style="opacity:1;transition:opacity .9s">Hi, I'm Stretch McGroo.<br>
+        <button class="ghost" id="say1" style="font-size:.9rem;padding:6px 12px">🔊 hear McGroo</button></h1>
       <div id="it2" style="display:none;transition:opacity .9s">
         <h2>But you can call me</h2>
         <p style="font-size:1.05rem;line-height:1.6"><b>His Royal Highness, the Eminent, Imperial, and
@@ -147,6 +151,7 @@ function viewIntro() {
     </div>`);
   const fadeOut = (id) => { const e = el(id); e.style.opacity = 0; return new Promise((r) => setTimeout(r, 900)); };
   speak("Hi, I'm Stretch McGroo.", { mcGroo: true });
+  if (el('say1')) el('say1').onclick = () => speak("Hi, I'm Stretch McGroo.", { mcGroo: true });
   setTimeout(async () => {
     await fadeOut('it1');
     el('it1').style.display = 'none';
@@ -585,8 +590,8 @@ function viewParent() {
       <h3 style="margin:8px 0 4px">Recent sessions</h3>
       <table class="pw">${s.sessions.slice(-7).reverse().map((x) => `<tr><td>${new Date(x.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${x.correct}/${x.total}</td><td>${Math.round(100 * x.correct / x.total)}%</td></tr>`).join('') || '<tr><td class="muted">none yet</td></tr>'}</table>
       <p class="muted" style="font-size:.85rem">Prototype note: this summary, plus coins and streaks, is the stub of the milestone-ledger rewards layer. The maths engine (what's mastered, what's due, what's next) is deliberate and fully local — no AI runs during practice.</p>
-      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.2</b> (if this doesn't say v0.2.2, fully close and reopen the app twice)</p>
-      <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="bn" class="ghost">${state.settings.bonus ? 'Bonus rounds: ON (tap to turn off)' : 'Bonus rounds: OFF (tap to turn on)'}</button><button id="rst" class="ghost" style="color:#b91c1c">Reset</button></div>
+      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.3</b> (if this doesn't say v0.2.3, fully close and reopen the app twice)</p>
+      <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="voicetest" class="ghost">🔊 Voice check</button><button id="bn" class="ghost">${state.settings.bonus ? 'Bonus: ON' : 'Bonus: OFF'}</button><button id="rst" class="ghost" style="color:#b91c1c">Reset</button></div>
       <button id="bk2" style="margin-top:14px">⬅️ Back</button>
     </div>`);
   el('bk2').onclick = viewHome;
@@ -594,6 +599,14 @@ function viewParent() {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = `stretch-export-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+  };
+  el('voicetest').onclick = () => {
+    let supported = false, total = 0, sample = [];
+    try { supported = 'speechSynthesis' in window; total = speechSynthesis.getVoices().length; sample = speechSynthesis.getVoices().slice(0, 4).map((v) => v.name); } catch {}
+    speak('Hello. I am the Supreme Architect of Grandiosity.', { mcGroo: true });
+    setTimeout(() => {
+      alert(`Voice check\n\nSupported: ${supported ? 'yes' : 'NO'}\nVoices on device: ${total}\nen-GB voices found: ${gbVoices.length}\nSample: ${sample.join(', ') || 'none'}\n\nIf nothing was spoken, close the app fully and reopen.`);
+    }, 400);
   };
   el('bn').onclick = async () => { state.settings.bonus = !state.settings.bonus; await saveState(state); viewParent(); };
   el('rst').onclick = async () => {
