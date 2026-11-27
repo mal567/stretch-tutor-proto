@@ -23,6 +23,7 @@ export function defaultState(name, year) {
     frontierRung: {}, // strandId -> rung hint for frontier items
     ledger: [],       // { t, type, coins, note }
     coins: 0, streakDays: 0, lastDay: null, sessions: [],
+    settings: { bonus: true },  // allow extra missions beyond the daily one (max 3/day total)
   };
   for (const s of STRANDS) {
     const a = ANCHORS[s.id];
@@ -227,6 +228,11 @@ export function finishSession(state, results) {
 }
 
 // ---------------- parent dashboard helpers ----------------
+export function sessionsToday(state) {
+  const today = dayStamp(Date.now());
+  return state.sessions.filter((s) => dayStamp(s.t) === today).length;
+}
+
 export function parentSummary(state) {
   const childYear = state.child?.year || 4;
   const rows = STRANDS.map((s) => {

@@ -141,7 +141,9 @@ H.coladd = (p, r) => {
       hint: 'Add the ones, carry the tens.', explain: `${fmt(a)} + ${fmt(b)} + ${fmt(c)} = ${fmt(sum)}.` };
   }
   const sum = a + b;
+  const oA = a % 10, oB = b % 10;
   return { stem: `${fmt(a)} + ${fmt(b)} = ?`, answer: sum,
+    hints: [`Line up ones under ones, tens under tens. Start with the ones.`, `Ones: ${oA} + ${oB} = ${oA + oB}${oA + oB >= 10 ? ' — carry 1 into the tens!' : ''}`],
     hint: 'Line up the columns, add from the ones.', explain: `${fmt(a)} + ${fmt(b)} = ${fmt(sum)}.` };
 };
 
@@ -169,7 +171,10 @@ H.colsub = (p, r) => {
   }
   if (a <= b) a = b + rnd(100, 1000);
   const ans = a - b;
+  const oA = a % 10, oB = b % 10;
   return { stem: `${fmt(a)} − ${fmt(b)} = ?`, answer: ans,
+    hints: r <= 1 ? [`Subtract the ones, then the tens. No borrowing needed.`]
+      : [`Start with the ones. ${oA} − ${oB}${oA < oB ? `: borrow from the tens!` : ` = ${oA - oB}`}`],
     hint: r <= 1 ? 'No borrowing needed — subtract each column.' :
       (p.zeroCross && r >= 3) ? 'Careful with zeros — you may need to borrow twice.' :
       'Subtract the ones first; borrow if needed.',
@@ -209,7 +214,18 @@ H.lm = (p, r) => {
   const bD = r <= 3 ? 1 : 2;
   const a = rnd(10 ** (aD - 1), 10 ** aD - 1);
   const b = rnd(10 ** (bD - 1), 10 ** bD - 1);
-  return { stem: `${fmt(a)} × ${b} = ?`, answer: a * b,
+  // computed hints: the generator knows its own decomposition
+  const tens = Math.floor(a / 10) * 10, ones = a % 10;
+  const hints = [];
+  if (bD === 1) {
+    hints.push(`Split ${fmt(a)} into ${fmt(tens)} + ${ones}`);
+    hints.push(`${fmt(tens)} × ${b} = ${fmt(tens * b)} and ${ones} × ${b} = ${ones * b} — add them`);
+  } else {
+    const bTens = Math.floor(b / 10) * 10, bOnes = b % 10;
+    hints.push(`Partition the ${b}: ${b} = ${bTens} + ${bOnes}`);
+    hints.push(`${fmt(a)} × ${bTens} = ${fmt(a * bTens)}; ${fmt(a)} × ${bOnes} = ${fmt(a * bOnes)} — add them`);
+  }
+  return { stem: `${fmt(a)} × ${b} = ?`, answer: a * b, hints,
     hint: bD === 2 ? 'Partition the second number: × tens, × ones, then add.' : 'Partition the big number: hundreds, tens, ones.',
     explain: `${fmt(a)} × ${b} = ${fmt(a * b)}.` };
 };
@@ -220,6 +236,7 @@ H.div = (p, r) => {
   let q = rnd(2, 10 ** (d - 1) + 20);
   const dividend = divisor * q;
   return { stem: `${fmt(dividend)} ÷ ${divisor} = ?`, answer: q,
+    hints: [`Use your tables: ${divisor} × 5 = ${divisor * 5} and ${divisor} × 10 = ${divisor * 10} — where does ${fmt(dividend)} sit?`],
     hint: 'Use your times tables.', explain: `${fmt(dividend)} ÷ ${divisor} = ${q}.` };
 };
 
@@ -320,7 +337,9 @@ H.decAS = (p, r) => {
     return { stem: `£${a.toFixed(2)} + £${b.toFixed(2)} = £?`, answer: ans, unit: '£',
       hint: 'Add the 10ps, then the pounds.', explain: `£${a.toFixed(2)} + £${b.toFixed(2)} = £${ans.toFixed(2)}.` }; }
   if (r === 4) { const a = rnd(199, 4999) / 100, b = rnd(199, 4999) / 100; const ans = r2(a + b);
+    const pA = Math.round(a * 100) % 100, pB = Math.round(b * 100) % 100;
     return { stem: `${money(a)} + ${money(b)} = £?`, answer: ans, unit: '£',
+      hints: [`Add the pence first: ${pA}p + ${pB}p = ${pA + pB}p${pA + pB >= 100 ? ' — carry the pound!' : ''}`],
       hint: 'Add the pence; carry into the pounds.', explain: `${money(a)} + ${money(b)} = ${money(ans)}.` }; }
   const paid = rnd(20, 50); const cost = rnd(199, 4999) / 100; const ans = r2(paid - cost);
   return { stem: `A book costs ${money(cost)}. You pay with £${paid}. How much change?`, answer: ans, unit: '£',
@@ -403,6 +422,7 @@ export function makeItem(concept, rung) {
     conceptId: concept.id, rung: r,
     kind: isMcq ? 'mcq' : 'num',
     stem: out.stem, answer: out.answer, hint: out.hint || '', explain: out.explain || '',
+    hints: Array.isArray(out.hints) ? out.hints.filter(Boolean) : [],
     unit: out.unit || null,
   };
   if (item.kind === 'mcq') {

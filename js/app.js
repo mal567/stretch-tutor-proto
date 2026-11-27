@@ -3,7 +3,7 @@ import { STRANDS, GRAPH } from './graph.js';
 import { makeItem } from './gen.js';
 import {
   defaultState, startPlacement, placementFollowUp, applyPlacementResult, finishPlacement,
-  buildDailySession, updateAttempt, finishSession, parentSummary,
+  buildDailySession, updateAttempt, finishSession, parentSummary, sessionsToday,
 } from './engine.js';
 import { loadState, saveState, clearAll } from './db.js';
 
@@ -98,8 +98,9 @@ function viewPlacementIntro() {
 // ---------- home ----------
 function viewHome() {
   const today = new Date().toISOString().slice(0, 10);
-  const doneToday = state.sessions.length && new Date(state.sessions[state.sessions.length - 1].t).toISOString().slice(0, 10) === today;
-  const sum = parentSummary(state);
+  const todayCount = sessionsToday(state);
+  const doneToday = todayCount > 0;
+  const bonusLeft = state.settings.bonus && todayCount >= 1 && todayCount < 3;
   render(`
     <div class="view" style="justify-content:center;text-align:center;gap:12px">
       <div class="chips">
@@ -107,13 +108,41 @@ function viewHome() {
         <div class="chip coins">🪙 ${state.coins} coins</div>
       </div>
       <h1>Hey ${esc(state.child.name)} 👋</h1>
-      ${doneToday
-        ? `<div class="card"><div class="stars">⭐️⭐️⭐️</div><p>You're done for today — brilliant! Come back tomorrow to keep your streak.</p></div>`
-        : `<button class="big" id="strt" style="width:100%">▶️ Today's 10 minutes</button>`}
+      ${!doneToday
+        ? `<button class="big" id="strt" style="width:100%">▶️ Today's 10 minutes</button>`
+        : `<div class="card"><div class="stars">⭐️⭐️⭐️</div><p>Today's mission is done — brilliant!</p></div>
+           ${bonusLeft ? `<button class="big" id="bonus" style="width:100%;background:#16a34a;box-shadow:0 3px 0 #15803d">➕ Bonus round</button>` : ''}`}
+      <button class="ghost" id="prog" style="max-width:260px;margin:0 auto;font-size:1rem">🌟 My progress</button>
       <button class="ghost" id="par" style="max-width:260px;margin:0 auto;font-size:1rem">Parent area</button>
     </div>`);
   if (el('strt')) el('strt').onclick = () => runMission(buildDailySession(state), { placement: false });
+  if (el('bonus')) el('bonus').onclick = () => runMission(buildDailySession(state), { placement: false });
+  el('prog').onclick = viewKidProgress;
   el('par').onclick = viewParentGate;
+}
+
+// kid-facing progress: coins, streak, and per-strand rungs as dots.
+// No year labels, no curriculum language (Principle 4) — just climbing.
+function viewKidProgress() {
+  const sum = parentSummary(state);
+  const mastered = Object.values(state.concepts).filter((c) => c.mastered).length;
+  render(`
+    <div class="view" style="gap:14px">
+      <h2>🌟 ${esc(state.child.name)}'s progress</h2>
+      <div class="kv" style="justify-content:center">
+        <div class="stat"><b>🪙 ${state.coins}</b><span>coins</span></div>
+        <div class="stat"><b>🔥 ${state.streakDays}</b><span>days in a row</span></div>
+        <div class="stat"><b>🏅 ${mastered}</b><span>mastered skills</span></div>
+      </div>
+      ${sum.rows.map((r) => {
+        const dots = [1, 2, 3, 4, 5].map((n) => n <= r.rung ? '●' : '○').join(' ');
+        return `<div class="card" style="padding:12px 16px">
+          <div class="row spread"><b>${r.emoji} ${esc(r.strand)}</b><span style="letter-spacing:.15em">${dots}</span></div>
+        </div>`;
+      }).join('')}
+      <button id="bk" style="width:100%">⬅️ Back</button>
+    </div>`);
+  el('bk').onclick = viewHome;
 }
 
 // ---------- mission runner ----------
@@ -163,21 +192,74 @@ function runMission(plan, opts = {}) {
           <div class="qnum">${mode === 'probe' || mode === 'place-confirm' ? '🧭 Explorer' : mode === 'review' ? '🔁 Quick review' : mode === 'stretch' ? '🚀 Challenge' : '🆕 New stuff'}</div>
           <div class="qtext" id="qt">${esc(it.stem)}</div>
           <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
-            <button class="ghost" id="spk" style="font-size:.95rem;padding:8px 14px">🔊 Read it to me</button>
+            <button class="ghost" id="spk" style="font-size:.95rem;padding:8px 14px">🔊 Read it</button>
+            <button class="ghost" id="padBtn" style="font-size:.95rem;padding:8px 14px">✏️ Working out</button>
+            <button class="ghost" id="hintBtn" style="font-size:.95rem;padding:8px 14px">💡 Help</button>
             ${opts.placement ? '<button class="ghost" id="skip" style="font-size:.95rem;padding:8px 14px">🤔 Not sure yet</button>' : ''}
           </div>
+          <div id="padzone" style="display:none;margin-top:12px">
+            <canvas id="pad" style="width:100%;height:170px;border:2px dashed #c7d2fe;border-radius:12px;background:#f8fafc;touch-action:none"></canvas>
+            <button class="ghost" id="padClr" style="font-size:.85rem;padding:5px 10px;margin-top:6px">Clear ✏️</button>
+          </div>
+          <div id="hintzone"></div>
           <div id="nudge" style="display:none;margin-top:12px;background:#fef3c7;border-radius:14px;padding:10px 14px;font-size:1rem">
             ${opts.placement
               ? 'Take your time 🙂 or tap <b>Not sure yet</b> to move on — either is fine!'
-              : 'Stuck? Try the 🔊 button, or take your best guess — wrong answers help too! 🙂'}
+              : 'Stuck? Try ✏️ or 💡 — or take your best guess, wrong answers help too! 🙂'}
           </div>
           <div id="ansarea"></div>
         </div>
       </div>`);
     el('spk').onclick = () => { armNudge(); speak(speakable(it.stem)); };
     if (el('skip')) el('skip').onclick = () => { armNudge(); grade(false, null, true); };
+    wireScratchpad();
+    wireHints(it);
     if (it.kind === 'mcq') drawMCQ(it); else drawPad(it);
     armNudge();
+  }
+
+  // finger-drawing scratchpad: externalise working memory, write like on paper
+  function wireScratchpad() {
+    let drawing = false;
+    const zone = document.getElementById('padzone');
+    const btn = document.getElementById('padBtn');
+    const cv = document.getElementById('pad');
+    const clr = document.getElementById('padClr');
+    btn.onclick = () => { armNudge(); zone.style.display = zone.style.display === 'none' ? 'block' : 'none'; sizeCanvas(); };
+    clr.onclick = () => { armNudge(); cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); };
+    function sizeCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      const w = cv.clientWidth, h = 170;
+      cv.width = w * dpr; cv.height = h * dpr;
+      const ctx = cv.getContext('2d');
+      ctx.scale(dpr, dpr);
+      ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.strokeStyle = '#1e293b';
+      ctx.clearRect(0, 0, w, h);
+    }
+    const ctx = () => cv.getContext('2d');
+    const pos = (e) => {
+      const r = cv.getBoundingClientRect();
+      return [e.clientX - r.left, e.clientY - r.top];
+    };
+    cv.onpointerdown = (e) => { drawing = true; armNudge(); const c = ctx(); const [x, y] = pos(e); c.beginPath(); c.moveTo(x, y); };
+    cv.onpointermove = (e) => { if (!drawing) return; const c = ctx(); const [x, y] = pos(e); c.lineTo(x, y); c.stroke(); };
+    cv.onpointerup = cv.onpointercancel = () => { drawing = false; };
+  }
+
+  // phased hint ladder: tap 💡 for level 1 (structure), again for level 2 (a concrete step)
+  function wireHints(it) {
+    const levels = [...new Set([it.hint, ...(it.hints || [])].filter(Boolean))];
+    const btn = document.getElementById('hintBtn');
+    const zone = document.getElementById('hintzone');
+    let n = 0;
+    btn.onclick = () => {
+      armNudge();
+      n++;
+      zone.innerHTML = n <= levels.length
+        ? `<div style="margin-top:12px;background:#eef2ff;border-radius:14px;padding:10px 14px;font-size:1rem">💡 ${esc(levels[n - 1])}</div>`
+        : `<div style="margin-top:12px;background:#eef2ff;border-radius:14px;padding:10px 14px;font-size:1rem">💪 That's all the hints — you've got this!</div>`;
+      requestAnimationFrame(() => zone.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+    };
   }
 
   function drawMCQ(it) {
@@ -319,8 +401,8 @@ function viewParent() {
       <h3 style="margin:8px 0 4px">Recent sessions</h3>
       <table class="pw">${s.sessions.slice(-7).reverse().map((x) => `<tr><td>${new Date(x.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${x.correct}/${x.total}</td><td>${Math.round(100 * x.correct / x.total)}%</td></tr>`).join('') || '<tr><td class="muted">none yet</td></tr>'}</table>
       <p class="muted" style="font-size:.85rem">Prototype note: this summary, plus coins and streaks, is the stub of the milestone-ledger rewards layer. The maths engine (what's mastered, what's due, what's next) is deliberate and fully local — no AI runs during practice.</p>
-      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.1.8</b> (if this doesn't say v0.1.8, fully close and reopen the app twice)</p>
-      <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="rst" class="ghost" style="color:#b91c1c">Reset everything</button></div>
+      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.1.9</b> (if this doesn't say v0.1.9, fully close and reopen the app twice)</p>
+      <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="bn" class="ghost">${state.settings.bonus ? 'Bonus rounds: ON (tap to turn off)' : 'Bonus rounds: OFF (tap to turn on)'}</button><button id="rst" class="ghost" style="color:#b91c1c">Reset</button></div>
       <button id="bk2" style="margin-top:14px">⬅️ Back</button>
     </div>`);
   el('bk2').onclick = viewHome;
@@ -329,6 +411,7 @@ function viewParent() {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = `stretch-export-${new Date().toISOString().slice(0, 10)}.json`; a.click();
   };
+  el('bn').onclick = async () => { state.settings.bonus = !state.settings.bonus; await saveState(state); viewParent(); };
   el('rst').onclick = async () => {
     if (confirm('Delete all progress on this device? This cannot be undone.')) {
       await clearAll(); state = null; viewWelcome();
