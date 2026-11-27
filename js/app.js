@@ -99,8 +99,23 @@ const speakable = (s) => s
 
 // ---------- boot ----------
 async function boot() {
+  // ?reset-sw → unregister workers + delete caches (fixes stale-cache dev hell).
+  // ?reset-all → also wipes local data. Tablet users never need these.
+  if (location.search.includes('reset-sw') || location.search.includes('reset-all')) {
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+      if (location.search.includes('reset-all')) localStorage.clear();
+    } catch {}
+    location.replace(location.pathname);
+    return;
+  }
   state = await loadState();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  // no service worker on localhost — local dev must always serve fresh files
+  const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  if ('serviceWorker' in navigator && !isLocal) navigator.serviceWorker.register('./sw.js').catch(() => {});
   if (!localStorage.getItem('stretchIntroSeen')) { viewIntro(); return; }
   if (!state) viewWelcome();
   else if (!state.placement.done) viewPlacementIntro();
@@ -590,7 +605,7 @@ function viewParent() {
       <h3 style="margin:8px 0 4px">Recent sessions</h3>
       <table class="pw">${s.sessions.slice(-7).reverse().map((x) => `<tr><td>${new Date(x.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${x.correct}/${x.total}</td><td>${Math.round(100 * x.correct / x.total)}%</td></tr>`).join('') || '<tr><td class="muted">none yet</td></tr>'}</table>
       <p class="muted" style="font-size:.85rem">Prototype note: this summary, plus coins and streaks, is the stub of the milestone-ledger rewards layer. The maths engine (what's mastered, what's due, what's next) is deliberate and fully local — no AI runs during practice.</p>
-      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.3</b> (if this doesn't say v0.2.3, fully close and reopen the app twice)</p>
+      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.4</b> (if this doesn't say v0.2.4, fully close and reopen the app twice)</p>
       <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="voicetest" class="ghost">🔊 Voice check</button><button id="bn" class="ghost">${state.settings.bonus ? 'Bonus: ON' : 'Bonus: OFF'}</button><button id="rst" class="ghost" style="color:#b91c1c">Reset</button></div>
       <button id="bk2" style="margin-top:14px">⬅️ Back</button>
     </div>`);
