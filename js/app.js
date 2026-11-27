@@ -116,7 +116,7 @@ async function boot() {
   // no service worker on localhost — local dev must always serve fresh files
   const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   if ('serviceWorker' in navigator && !isLocal) navigator.serviceWorker.register('./sw.js').catch(() => {});
-  if (!localStorage.getItem('stretchIntroSeen')) { viewIntro(); return; }
+  if (location.search.includes('intro') || !localStorage.getItem('stretchIntroSeen')) { viewIntro(); return; }
   if (!state) viewWelcome();
   else if (!state.placement.done) viewPlacementIntro();
   else viewHome();
@@ -178,7 +178,7 @@ function viewIntro() {
       el('it2').style.display = 'none';
       el('it3').style.display = 'block';
       speak("Okay, since it's you, you can just call me Stretch.", { mcGroo: true });
-      el('go').onclick = () => { localStorage.setItem('stretchIntroSeen', '1'); viewWelcome(); };
+      el('go').onclick = () => { localStorage.setItem('stretchIntroSeen', '1'); if (!state) viewWelcome(); else if (!state.placement.done) viewPlacementIntro(); else viewHome(); };
     };
   }, 2400);
 }
@@ -613,8 +613,8 @@ function viewParent() {
       <h3 style="margin:8px 0 4px">Recent sessions</h3>
       <table class="pw">${s.sessions.slice(-7).reverse().map((x) => `<tr><td>${new Date(x.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${x.correct}/${x.total}</td><td>${Math.round(100 * x.correct / x.total)}%</td></tr>`).join('') || '<tr><td class="muted">none yet</td></tr>'}</table>
       <p class="muted" style="font-size:.85rem">Prototype note: this summary, plus coins and streaks, is the stub of the milestone-ledger rewards layer. The maths engine (what's mastered, what's due, what's next) is deliberate and fully local — no AI runs during practice.</p>
-      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.5</b> (if this doesn't say v0.2.5, fully close and reopen the app twice)</p>
-      <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="voicetest" class="ghost">🔊 Voice check</button><button id="bn" class="ghost">${state.settings.bonus ? 'Bonus: ON' : 'Bonus: OFF'}</button><button id="rst" class="ghost" style="color:#b91c1c">Reset</button></div>
+      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.6</b> (if this doesn't say v0.2.6, fully close and reopen the app twice)</p>
+      <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="voicetest" class="ghost">🔊 Voice check</button><button id="introbtn" class="ghost">🎩 Replay intro</button><button id="bn" class="ghost">${state.settings.bonus ? 'Bonus: ON' : 'Bonus: OFF'}</button><button id="rst" class="ghost" style="color:#b91c1c">Reset</button></div>
       <button id="bk2" style="margin-top:14px">⬅️ Back</button>
     </div>`);
   el('bk2').onclick = viewHome;
@@ -631,6 +631,7 @@ function viewParent() {
       alert(`Voice check\n\nSupported: ${supported ? 'yes' : 'NO'}\nVoices on device: ${total}\nen-GB voices found: ${gbVoices.length}\nSample: ${sample.join(', ') || 'none'}\n\nIf nothing was spoken, close the app fully and reopen.`);
     }, 400);
   };
+  el('introbtn').onclick = () => viewIntro();
   el('bn').onclick = async () => { state.settings.bonus = !state.settings.bonus; await saveState(state); viewParent(); };
   el('rst').onclick = async () => {
     if (confirm('Delete all progress on this device? This cannot be undone.')) {
