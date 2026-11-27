@@ -11,6 +11,33 @@ const $app = document.getElementById('app');
 let state = null;
 let wsDemos = 0; // workspace ghost-demo counter (first 2 opens per app launch)
 
+// ---- The voice of Stretch McGroo: whimsy in the framing, never in the maths.
+// Garnish fires sporadically (~1 in 5 items); praise often; jokes on a miss
+// are rare and always self-deprecating (never at the child). Probes stay plain.
+const GARNISH = [
+  'The Sovereign of the Slightly Suspected Realms demands to know:',
+  'Sir Stretch McGroo, Master of All Beasts of the Earth, requests:',
+  'The Supreme Architect of Grandiosity wonders:',
+  'By royal decree of McGroo, answer this:',
+  "Stretch's fish cabinet has debated and agreed to ask:",
+];
+const PRAISE = [
+  'Royal approval! 👑', 'McGroo is impressed. Very.', 'The Beasts of the Earth salute you! 🦁',
+  'Grandiose. Utterly grandiose.', 'The fish cabinet applauds (bubbles). 🫧', 'The Realms are nourished. 🏰',
+];
+const MISS = [
+  "Even the Supreme Architect gets that wrong sometimes.",
+  "McGroo once said 4007. We don't talk about it.",
+  "The realms forgive. Look at the how. 🧭",
+];
+const DONE = [
+  'Magnificent. McGroo bows. Actually bows. 🎩',
+  'The Known and Slightly Suspected Realms are in your debt. 🏰',
+  'McGroo has written this down in the Grand Book of Grandiosity. 📜',
+  'The fish cabinet has declared today a holiday. 🐟',
+];
+const maybe = (arr, p) => (Math.random() < p ? arr[Math.floor(Math.random() * arr.length)] : null);
+
 // Never fail silently while a child is testing this.
 window.addEventListener('error', (e) => {
   const bar = document.createElement('div');
@@ -44,9 +71,43 @@ const speakable = (s) => s
 async function boot() {
   state = await loadState();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  if (!localStorage.getItem('stretchIntroSeen')) { viewIntro(); return; }
   if (!state) viewWelcome();
   else if (!state.placement.done) viewPlacementIntro();
   else viewHome();
+}
+
+// First-launch McGroo intro: pompous title → forced "Hmmmm" → deflation.
+function viewIntro() {
+  render(`
+    <div class="view" style="justify-content:center;text-align:center;gap:18px">
+      <div style="font-size:5rem" id="masc">🦁</div>
+      <h1 id="it1" style="opacity:1;transition:opacity .9s">Hi, I'm Stretch McGroo.</h1>
+      <div id="it2" style="display:none;transition:opacity .9s">
+        <h2>But you can call me</h2>
+        <p style="font-size:1.05rem;line-height:1.6"><b>His Royal Highness, the Eminent, Imperial, and
+        Magnanimous Excellency, Sovereign of the Known and Slightly Suspected Realms,
+        Supreme Architect of Grandiosity, Master of All Beasts of the Earth and
+        Fishes of the Seas, Sir Stretch McGroo</b></p>
+        <button class="big" id="hmm" style="width:100%;max-width:300px;margin:0 auto">Hmmmm</button>
+      </div>
+      <div id="it3" style="display:none;transition:opacity .9s">
+        <h2>…okay, since it's you — you can just call me Stretch.</h2>
+        <button class="big" id="go" style="width:100%;max-width:300px;margin:0 auto">Let's go ➡️</button>
+      </div>
+    </div>`);
+  const fadeOut = (id) => { const e = el(id); e.style.opacity = 0; return new Promise((r) => setTimeout(r, 900)); };
+  setTimeout(async () => {
+    await fadeOut('it1');
+    el('it1').style.display = 'none';
+    el('it2').style.display = 'block';
+    el('hmm').onclick = async () => {
+      await fadeOut('it2');
+      el('it2').style.display = 'none';
+      el('it3').style.display = 'block';
+      el('go').onclick = () => { localStorage.setItem('stretchIntroSeen', '1'); viewWelcome(); };
+    };
+  }, 1800);
 }
 
 // ---------- welcome ----------
@@ -235,7 +296,11 @@ function runMission(plan, opts = {}) {
         <div class="row spread"><div class="muted">Question ${n} of ${total}</div><div class="muted">⏱ ${Math.max(0, Math.ceil((LIMIT - (Date.now() - t0)) / 60000))} min</div></div>
         <div class="progress"><div style="width:${(i / total) * 100}%"></div></div>
         <div class="card">
-          <div class="qnum">${mode === 'probe' || mode === 'place-confirm' ? '🧭 Explorer' : mode === 'review' ? '🔁 Quick review' : mode === 'stretch' ? '🚀 Challenge' : '🆕 New stuff'}</div>
+          <div class="qnum">${opts.placement
+            ? '🧭 Explorer'
+            : mode === 'review' ? '🔁 Quick review'
+            : mode === 'stretch' ? '🚀 Challenge'
+            : `🆕 New stuff${maybe(GARNISH, 0.2) ? `<br><span style="color:#6d28d9">${esc(maybe(GARNISH, 1))}</span>` : ''}`}</div>
           <div class="qtext" id="qt">${esc(it.stem)}</div>
           <div id="wscap" style="display:none;margin-top:10px;background:#fef3c7;border-radius:12px;padding:8px 12px;font-size:.95rem;color:#4338ca">
             ✏️ Try writing the first bit down — like the first part of the sum — so you don't have to hold it in your head
@@ -381,9 +446,12 @@ function runMission(plan, opts = {}) {
     }
 
     const fb = el('fb');
+    const praise = ok ? maybe(PRAISE, 0.5) : null;
+    const missLine = (!ok && !skipped) ? maybe(MISS, 0.3) : null;
     fb.innerHTML = `${skipped
         ? `<div class="feed no">Skipping is what good explorers do! 🧭</div>`
         : `<div class="feed ${ok ? 'ok' : 'no'}">${ok ? '✅ Yes! ' : '❌ Not quite. '}${esc(it.explain)}
+           ${praise ? `<br><b>${esc(praise)}</b>` : ''}${missLine ? `<br><i>${esc(missLine)}</i>` : ''}
            <button class="ghost" id="hear" style="font-size:.85rem;padding:5px 10px;margin-left:6px">🔊 hear it</button></div>`}
       <button class="big" id="nx" style="width:100%;margin-top:12px">${i + 1 >= plan.length ? 'Finish 🎉' : 'Next ➡️'}</button>`;
     // voice is ALWAYS opt-in: nothing is ever spoken automatically on a wrong
@@ -421,6 +489,7 @@ function viewDone(fin, spent) {
       <h1>Mission complete!</h1>
       <div class="stars">${stars}</div>
       <p>${Math.round(fin.pct * 100)}% correct in ${mins} min — <b>+🪙 ${fin.coins} coins</b></p>
+      ${maybe(DONE, 1) ? `<p style="font-size:1.05rem"><b>${esc(maybe(DONE, 1))}</b></p>` : ''}
       <p class="muted">Streak: ${state.streakDays} day${state.streakDays === 1 ? '' : 's'} in a row</p>
       <div class="card">${parentSummary(state).rows.map((r) => `<div class="row spread" style="padding:6px 0"><span>${r.emoji} ${esc(r.frontier)}</span><span class="muted">rung ${r.rung}/5 ${r.mastered ? '✅' : ''}</span></div>`).join('')}</div>
       <button class="big" id="home" style="width:100%">Done</button>
@@ -463,7 +532,7 @@ function viewParent() {
       <h3 style="margin:8px 0 4px">Recent sessions</h3>
       <table class="pw">${s.sessions.slice(-7).reverse().map((x) => `<tr><td>${new Date(x.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${x.correct}/${x.total}</td><td>${Math.round(100 * x.correct / x.total)}%</td></tr>`).join('') || '<tr><td class="muted">none yet</td></tr>'}</table>
       <p class="muted" style="font-size:.85rem">Prototype note: this summary, plus coins and streaks, is the stub of the milestone-ledger rewards layer. The maths engine (what's mastered, what's due, what's next) is deliberate and fully local — no AI runs during practice.</p>
-      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.0</b> (if this doesn't say v0.2.0, fully close and reopen the app twice)</p>
+      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.1</b> (if this doesn't say v0.2.1, fully close and reopen the app twice)</p>
       <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="bn" class="ghost">${state.settings.bonus ? 'Bonus rounds: ON (tap to turn off)' : 'Bonus rounds: OFF (tap to turn on)'}</button><button id="rst" class="ghost" style="color:#b91c1c">Reset</button></div>
       <button id="bk2" style="margin-top:14px">⬅️ Back</button>
     </div>`);
