@@ -67,19 +67,31 @@ try {
     if (typeof speechSynthesis.onvoiceschanged !== 'undefined') speechSynthesis.onvoiceschanged = loadVoices;
   }
 } catch {}
+const makeU = (text, opts = {}) => {
+  const u = new SpeechSynthesisUtterance(text);
+  const pick = gbVoices.find((v) => /Female|Serena|Kate/i.test(v.name))
+    || gbVoices.find((v) => /Male|Daniel/i.test(v.name))
+    || gbVoices[0];
+  if (pick) { u.voice = pick; u.lang = pick.lang || 'en-GB'; } else { u.lang = 'en-GB'; }
+  u.rate = opts.mcGroo ? 1.05 : 1.08;
+  u.pitch = opts.mcGroo ? 0.95 : 1.1;
+  return u;
+};
 const speak = (text, opts = {}) => {
   try {
     if (!('speechSynthesis' in window)) return;
     if (!gbVoices.length) loadVoices();
-    const u = new SpeechSynthesisUtterance(text);
-    const pick = gbVoices.find((v) => /Female|Serena|Kate/i.test(v.name))
-      || gbVoices.find((v) => /Male|Daniel/i.test(v.name))
-      || gbVoices[0];
-    if (pick) { u.voice = pick; u.lang = pick.lang || 'en-GB'; } else { u.lang = 'en-GB'; }
-    u.rate = opts.mcGroo ? 1.05 : 1.08;
-    u.pitch = opts.mcGroo ? 0.95 : 1.1;
     speechSynthesis.cancel();
-    setTimeout(() => { try { speechSynthesis.speak(u); } catch {} }, 60);
+    setTimeout(() => { try { speechSynthesis.speak(makeU(text, opts)); } catch {} }, 60);
+  } catch {}
+};
+// speak lines in sequence — the engine's natural gap between utterances gives a beat pause
+const speakSeq = (lines, opts = {}) => {
+  try {
+    if (!('speechSynthesis' in window)) return;
+    if (!gbVoices.length) loadVoices();
+    speechSynthesis.cancel();
+    setTimeout(() => { try { lines.forEach((l) => speechSynthesis.speak(makeU(l, opts))); } catch {} }, 60);
   } catch {}
 };
 // Speech engines mangle maths symbols — say the question in words.
@@ -152,8 +164,8 @@ function viewIntro() {
       <h1 id="it1" style="opacity:1;transition:opacity .9s">Hi, I'm Stretch McGroo.<br>
         <button class="ghost" id="say1" style="font-size:.9rem;padding:6px 12px">🔊 hear McGroo</button></h1>
       <div id="it2" style="display:none;transition:opacity .9s">
-        <h2>But you can call me</h2>
-        <p style="font-size:1.05rem;line-height:1.6"><b>His Royal Highness, the
+        <h2 style="font-size:.95rem;font-weight:600;color:#64748b;margin:0">But you can call me</h2>
+        <p style="font-size:1.3rem;line-height:1.5;margin:8px 0 14px"><b>His Royal Highness, the
         Eminent and Magnanimous Excellency, Sir Stretch McGroo</b></p>
         <button class="big" id="hmm" style="width:100%;max-width:300px;margin:0 auto">Hmmmm</button>
       </div>
@@ -169,7 +181,7 @@ function viewIntro() {
     await fadeOut('it1');
     el('it1').style.display = 'none';
     el('it2').style.display = 'block';
-    speak('But you can call me: His Royal Highness, the Eminent and Magnanimous Excellency, Sir Stretch McGroo.', { mcGroo: true });
+    speakSeq(['But you can call me: His Royal Highness, the Eminent and Magnanimous Excellency…', 'Sir Stretch McGroo.'], { mcGroo: true });
     el('hmm').onclick = async () => {
       speechSynthesis?.cancel?.();
       await fadeOut('it2');
@@ -613,7 +625,7 @@ function viewParent() {
       <h3 style="margin:8px 0 4px">Recent sessions</h3>
       <table class="pw">${s.sessions.slice(-7).reverse().map((x) => `<tr><td>${new Date(x.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${x.correct}/${x.total}</td><td>${Math.round(100 * x.correct / x.total)}%</td></tr>`).join('') || '<tr><td class="muted">none yet</td></tr>'}</table>
       <p class="muted" style="font-size:.85rem">Prototype note: this summary, plus coins and streaks, is the stub of the milestone-ledger rewards layer. The maths engine (what's mastered, what's due, what's next) is deliberate and fully local — no AI runs during practice.</p>
-      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.8</b> (if this doesn't say v0.2.8, fully close and reopen the app twice)</p>
+      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.9</b> (if this doesn't say v0.2.9, fully close and reopen the app twice)</p>
       <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="voicetest" class="ghost">🔊 Voice check</button><button id="introbtn" class="ghost">🎩 Replay intro</button><button id="bn" class="ghost">${state.settings.bonus ? 'Bonus: ON' : 'Bonus: OFF'}</button><button id="rst" class="ghost" style="color:#b91c1c">Reset</button></div>
       <button id="bk2" style="margin-top:14px">⬅️ Back</button>
     </div>`);
