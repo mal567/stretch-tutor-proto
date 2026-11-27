@@ -394,6 +394,7 @@ function runMission(plan, opts = {}) {
             <button class="ghost" id="hintBtn" style="font-size:.95rem;padding:8px 14px">💡 Help</button>
             ${opts.placement ? '<button class="ghost" id="skip" style="font-size:.95rem;padding:8px 14px">🤔 Not sure yet</button>' : ''}
           </div>
+          <div id="padhint" style="display:none;margin-top:8px;font-size:.9rem;color:#6d28d9">✏️ You can always tap <b>Working out</b> — this space appears on every question!</div>
           <div id="padzone" style="display:none;margin-top:12px">
             <div id="padcap" style="display:none;background:#fef3c7;border-radius:12px;padding:8px 12px;font-size:.95rem;color:#4338ca;margin-bottom:8px"></div>
             <canvas id="pad" style="width:100%;height:170px;border:2px dashed #c7d2fe;border-radius:12px;background:#f8fafc;touch-action:none"></canvas>
@@ -421,6 +422,16 @@ function runMission(plan, opts = {}) {
       cap.style.display = 'block';
       cap.innerHTML = '✏️ The space below is your <b>working-out space</b> — jot down part-sums or numbers here, just like paper. You don\'t have to use it, but it\'s always there when a question feels too big for your head!';
       speak('The space below is your working out space. Jot down part sums or numbers there, just like paper. You don\'t have to use it, but it\'s always there when a question feels too big for your head!', { mcGroo: true });
+    }
+    // Explore Q2: the space is closed by default — teach that it comes back on demand.
+    if (opts.placement && i === 1) {
+      const h = el('padhint');
+      if (h) {
+        h.style.display = 'block';
+        const b = el('padBtn');
+        if (b) { b.classList.add('pulse'); setTimeout(() => b.classList.remove('pulse'), 4000); }
+        speak('And remember — tap Working out on any question, and this space appears!', { mcGroo: true });
+      }
     }
     armNudge();
   }
@@ -625,7 +636,7 @@ function viewParent() {
       <h3 style="margin:8px 0 4px">Recent sessions</h3>
       <table class="pw">${s.sessions.slice(-7).reverse().map((x) => `<tr><td>${new Date(x.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${x.correct}/${x.total}</td><td>${Math.round(100 * x.correct / x.total)}%</td></tr>`).join('') || '<tr><td class="muted">none yet</td></tr>'}</table>
       <p class="muted" style="font-size:.85rem">Prototype note: this summary, plus coins and streaks, is the stub of the milestone-ledger rewards layer. The maths engine (what's mastered, what's due, what's next) is deliberate and fully local — no AI runs during practice.</p>
-      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.9</b> (if this doesn't say v0.2.9, fully close and reopen the app twice)</p>
+      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.10</b> (if this doesn't say v0.2.10, fully close and reopen the app twice)</p>
       <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="voicetest" class="ghost">🔊 Voice check</button><button id="introbtn" class="ghost">🎩 Replay intro</button><button id="bn" class="ghost">${state.settings.bonus ? 'Bonus: ON' : 'Bonus: OFF'}</button><button id="rst" class="ghost" style="color:#b91c1c">Reset</button></div>
       <button id="bk2" style="margin-top:14px">⬅️ Back</button>
     </div>`);
