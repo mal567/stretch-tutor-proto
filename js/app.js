@@ -465,7 +465,16 @@ function runMission(plan, opts = {}) {
     const btn = document.getElementById('padBtn');
     const cv = document.getElementById('pad');
     const clr = document.getElementById('padClr');
-    btn.onclick = () => { armNudge(); zone.style.display = zone.style.display === 'none' ? 'block' : 'none'; sizeCanvas(); if (zone.style.display === 'block' && wsDemos < 2) ghostDemo(it, cv); };
+    btn.onclick = () => {
+      armNudge();
+      zone.style.display = zone.style.display === 'none' ? 'block' : 'none';
+      sizeCanvas();
+      if (zone.style.display === 'block') {
+        if (wsDemos < 2) ghostDemo(it, cv);
+        // keep the canvas centred so the answer box below stays reachable
+        try { cv.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch {}
+      }
+    };
     clr.onclick = () => { armNudge(); cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); };
     function sizeCanvas() {
       const dpr = window.devicePixelRatio || 1;
@@ -656,7 +665,7 @@ function viewParent() {
       <h3 style="margin:8px 0 4px">Recent sessions</h3>
       <table class="pw">${s.sessions.slice(-7).reverse().map((x) => `<tr><td>${new Date(x.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${x.correct}/${x.total}</td><td>${Math.round(100 * x.correct / x.total)}%</td></tr>`).join('') || '<tr><td class="muted">none yet</td></tr>'}</table>
       <p class="muted" style="font-size:.85rem">Prototype note: this summary, plus coins and streaks, is the stub of the milestone-ledger rewards layer. The maths engine (what's mastered, what's due, what's next) is deliberate and fully local — no AI runs during practice.</p>
-      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.11</b> (if this doesn't say v0.2.11, fully close and reopen the app twice)</p>
+      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.12</b> (if this doesn't say v0.2.12, fully close and reopen the app twice)</p>
       <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="voicetest" class="ghost">🔊 Voice check</button><button id="introbtn" class="ghost">🎩 Replay intro</button><button id="bn" class="ghost">${state.settings.bonus ? 'Bonus: ON' : 'Bonus: OFF'}</button><button id="rst" class="ghost" style="color:#b91c1c">Reset</button></div>
       <button id="bk2" style="margin-top:14px">⬅️ Back</button>
     </div>`);
