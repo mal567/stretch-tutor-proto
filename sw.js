@@ -1,5 +1,5 @@
 // Service worker — cache the shell so the app works fully offline.
-const VERSION = 'stretch-v0.2.10';
+const VERSION = 'stretch-v0.2.11';
 const SHELL = [
   './', './index.html', './styles.css', './manifest.webmanifest',
   './js/app.js', './js/graph.js', './js/gen.js', './js/engine.js', './js/db.js',

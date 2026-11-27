@@ -85,13 +85,29 @@ const speak = (text, opts = {}) => {
     setTimeout(() => { try { speechSynthesis.speak(makeU(text, opts)); } catch {} }, 60);
   } catch {}
 };
-// speak lines in sequence — the engine's natural gap between utterances gives a beat pause
-const speakSeq = (lines, opts = {}) => {
+// speak lines in sequence with a pause between them (the engine queues, so no
+// stall if onend never fires — a generous fallback timer advances anyway).
+// A line is a string or { t, o, gap }: o = utterance overrides (pitch/rate), gap = ms pause after.
+const speakSeq = (lines, opts = {}, gapMs = 450) => {
   try {
     if (!('speechSynthesis' in window)) return;
     if (!gbVoices.length) loadVoices();
     speechSynthesis.cancel();
-    setTimeout(() => { try { lines.forEach((l) => speechSynthesis.speak(makeU(l, opts))); } catch {} }, 60);
+    const play = (k) => {
+      if (k >= lines.length) return;
+      const l = lines[k];
+      const text = typeof l === 'string' ? l : l.t;
+      const u = makeU(text, { ...opts, ...(typeof l === 'object' && l.o ? l.o : {}) });
+      let done = false;
+      const next = () => {
+        if (done) return; done = true;
+        setTimeout(() => play(k + 1), (typeof l === 'object' && l.gap) || gapMs);
+      };
+      u.onend = next;
+      setTimeout(next, 380 * text.split(' ').length + 2500);
+      try { speechSynthesis.speak(u); } catch {}
+    };
+    setTimeout(() => play(0), 60);
   } catch {}
 };
 // Speech engines mangle maths symbols — say the question in words.
@@ -181,7 +197,11 @@ function viewIntro() {
     await fadeOut('it1');
     el('it1').style.display = 'none';
     el('it2').style.display = 'block';
-    speakSeq(['But you can call me: His Royal Highness, the Eminent and Magnanimous Excellency…', 'Sir Stretch McGroo.'], { mcGroo: true });
+    speakSeq([
+      'But you can call me: His Royal Highness, the Eminent and Magnanimous Excellency…',
+      { t: 'Sir!', o: { pitch: 1.2, rate: 0.9 }, gap: 800 },
+      'Stretch McGroo.',
+    ], { mcGroo: true });
     el('hmm').onclick = async () => {
       speechSynthesis?.cancel?.();
       await fadeOut('it2');
@@ -636,7 +656,7 @@ function viewParent() {
       <h3 style="margin:8px 0 4px">Recent sessions</h3>
       <table class="pw">${s.sessions.slice(-7).reverse().map((x) => `<tr><td>${new Date(x.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${x.correct}/${x.total}</td><td>${Math.round(100 * x.correct / x.total)}%</td></tr>`).join('') || '<tr><td class="muted">none yet</td></tr>'}</table>
       <p class="muted" style="font-size:.85rem">Prototype note: this summary, plus coins and streaks, is the stub of the milestone-ledger rewards layer. The maths engine (what's mastered, what's due, what's next) is deliberate and fully local — no AI runs during practice.</p>
-      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.10</b> (if this doesn't say v0.2.10, fully close and reopen the app twice)</p>
+      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.11</b> (if this doesn't say v0.2.11, fully close and reopen the app twice)</p>
       <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="voicetest" class="ghost">🔊 Voice check</button><button id="introbtn" class="ghost">🎩 Replay intro</button><button id="bn" class="ghost">${state.settings.bonus ? 'Bonus: ON' : 'Bonus: OFF'}</button><button id="rst" class="ghost" style="color:#b91c1c">Reset</button></div>
       <button id="bk2" style="margin-top:14px">⬅️ Back</button>
     </div>`);
