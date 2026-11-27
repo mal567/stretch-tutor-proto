@@ -9,6 +9,7 @@ import { loadState, saveState, clearAll } from './db.js';
 
 const $app = document.getElementById('app');
 let state = null;
+let wsDemos = 0; // workspace ghost-demo counter (first 2 opens per app launch)
 
 // Never fail silently while a child is testing this.
 window.addEventListener('error', (e) => {
@@ -166,15 +167,58 @@ function runMission(plan, opts = {}) {
     }
   }
 
-  // Stillness nudge: after N seconds with no taps, gently offer a way out.
-  // Never auto-advances, never counts down, fires once per question.
-  const NUDGE_MS = opts.placement ? 30_000 : 45_000;
+  // Staged scaffolding: question alone → nudge to workspace (✏️) → hint 1
+  // → worked example on a SIBLING question (different numbers, so her item
+  // still measures). Any activity resets the current stage timer; stages
+  // advance only on stillness. Placement keeps the simple nudge.
+  let stage = 0, hintShown = 0, hintLevels = [];
   function armNudge() {
     clearTimeout(pokeTimer);
-    pokeTimer = setTimeout(() => {
-      const n = document.getElementById('nudge');
-      if (n) n.style.display = 'block';
-    }, NUDGE_MS);
+    const t = opts.placement ? 30_000 : [20_000, 20_000, 25_000][Math.min(stage, 2)];
+    pokeTimer = setTimeout(fireStage, t);
+  }
+  function fireStage() {
+    if (opts.placement) { const n = document.getElementById('nudge'); if (n) n.style.display = 'block'; return; }
+    if (stage === 0) {
+      stage = 1;
+      const b = document.getElementById('padBtn');
+      if (b) { b.classList.add('pulse'); setTimeout(() => b.classList.remove('pulse'), 4000); }
+      const cap = document.getElementById('wscap');
+      if (cap) cap.style.display = 'block';
+    } else if (stage === 1) {
+      stage = 2;
+      showHint();
+      armNudge();
+    } else if (stage === 2) {
+      stage = 3;
+      showWorkedExample();
+    }
+  }
+  function showHint() {
+    const zone = document.getElementById('hintzone');
+    if (!zone) return;
+    hintShown++;
+    zone.innerHTML = hintShown <= hintLevels.length
+      ? `<div style="margin-top:12px;background:#eef2ff;border-radius:14px;padding:10px 14px;font-size:1rem">💡 ${esc(hintLevels[hintShown - 1])}</div>`
+      : `<div style="margin-top:12px;background:#eef2ff;border-radius:14px;padding:10px 14px;font-size:1rem">💪 That's all the hints — you've got this!</div>`;
+    requestAnimationFrame(() => zone.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+  }
+  function showWorkedExample() {
+    const cur = plan[i]; const it = cur.item || cur;
+    const zone = document.getElementById('hintzone');
+    let sib = null;
+    try { sib = makeItem(GRAPH.byId.get(it.conceptId), it.rung); } catch {}
+    if (!sib || !(sib.hints && sib.hints.length)) {
+      zone.innerHTML = `<div style="margin-top:12px;background:#eef2ff;border-radius:14px;padding:10px 14px;font-size:1rem">💪 Take your best guess — wrong answers help too! (Or tap skip 🤔)</div>`;
+      return;
+    }
+    const steps = [...sib.hints, sib.explain];
+    zone.innerHTML = `<div style="margin-top:12px;background:#e0f2fe;border-radius:14px;padding:10px 14px;font-size:1rem">
+      📝 One like yours, worked out:<br>
+      <b>${esc(sib.stem)}</b><br>
+      ${steps.map((s) => esc(s)).join('<br>')}<br>
+      <i>Now try yours!</i></div>`;
+    requestAnimationFrame(() => zone.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
   }
 
   function step() {
@@ -183,6 +227,8 @@ function runMission(plan, opts = {}) {
     const p = plan[i];
     const it = p.item || p; // daily sessions wrap items; placement passes bare items
     const mode = p.mode || 'new';
+    stage = 0; hintShown = 0;
+    hintLevels = [...new Set([it.hint, ...(it.hints || [])].filter(Boolean))];
     const n = i + 1, total = plan.length;
     render(`
       <div class="view">
@@ -191,6 +237,9 @@ function runMission(plan, opts = {}) {
         <div class="card">
           <div class="qnum">${mode === 'probe' || mode === 'place-confirm' ? '🧭 Explorer' : mode === 'review' ? '🔁 Quick review' : mode === 'stretch' ? '🚀 Challenge' : '🆕 New stuff'}</div>
           <div class="qtext" id="qt">${esc(it.stem)}</div>
+          <div id="wscap" style="display:none;margin-top:10px;background:#fef3c7;border-radius:12px;padding:8px 12px;font-size:.95rem;color:#4338ca">
+            ✏️ Try writing the first bit down — like the first part of the sum — so you don't have to hold it in your head
+          </div>
           <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
             <button class="ghost" id="spk" style="font-size:.95rem;padding:8px 14px">🔊 Read it</button>
             <button class="ghost" id="padBtn" style="font-size:.95rem;padding:8px 14px">✏️ Working out</button>
@@ -212,54 +261,67 @@ function runMission(plan, opts = {}) {
       </div>`);
     el('spk').onclick = () => { armNudge(); speak(speakable(it.stem)); };
     if (el('skip')) el('skip').onclick = () => { armNudge(); grade(false, null, true); };
-    wireScratchpad();
-    wireHints(it);
+    wireScratchpad(it);
+    wireHints();
     if (it.kind === 'mcq') drawMCQ(it); else drawPad(it);
     armNudge();
   }
 
-  // finger-drawing scratchpad: externalise working memory, write like on paper
-  function wireScratchpad() {
+  // finger-drawing scratchpad: externalise working memory, write like on paper.
+  // First 2 opens (per app launch): a ghost hand demonstrates the method on a
+  // SIBLING question — write first part down, then the next, then add.
+  function wireScratchpad(it) {
     let drawing = false;
     const zone = document.getElementById('padzone');
     const btn = document.getElementById('padBtn');
     const cv = document.getElementById('pad');
     const clr = document.getElementById('padClr');
-    btn.onclick = () => { armNudge(); zone.style.display = zone.style.display === 'none' ? 'block' : 'none'; sizeCanvas(); };
+    btn.onclick = () => { armNudge(); zone.style.display = zone.style.display === 'none' ? 'block' : 'none'; sizeCanvas(); if (zone.style.display === 'block' && wsDemos < 2) ghostDemo(it, cv); };
     clr.onclick = () => { armNudge(); cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); };
     function sizeCanvas() {
       const dpr = window.devicePixelRatio || 1;
       const w = cv.clientWidth, h = 170;
       cv.width = w * dpr; cv.height = h * dpr;
       const ctx = cv.getContext('2d');
-      ctx.scale(dpr, dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.strokeStyle = '#1e293b';
+      ctx.fillStyle = '#475569';
       ctx.clearRect(0, 0, w, h);
     }
-    const ctx = () => cv.getContext('2d');
     const pos = (e) => {
       const r = cv.getBoundingClientRect();
       return [e.clientX - r.left, e.clientY - r.top];
     };
-    cv.onpointerdown = (e) => { drawing = true; armNudge(); const c = ctx(); const [x, y] = pos(e); c.beginPath(); c.moveTo(x, y); };
-    cv.onpointermove = (e) => { if (!drawing) return; const c = ctx(); const [x, y] = pos(e); c.lineTo(x, y); c.stroke(); };
+    cv.onpointerdown = (e) => { drawing = true; armNudge(); const c = cv.getContext('2d'); const [x, y] = pos(e); c.beginPath(); c.moveTo(x, y); };
+    cv.onpointermove = (e) => { if (!drawing) return; armNudge(); const c = cv.getContext('2d'); const [x, y] = pos(e); c.lineTo(x, y); c.stroke(); };
     cv.onpointerup = cv.onpointercancel = () => { drawing = false; };
   }
 
-  // phased hint ladder: tap 💡 for level 1 (structure), again for level 2 (a concrete step)
-  function wireHints(it) {
-    const levels = [...new Set([it.hint, ...(it.hints || [])].filter(Boolean))];
+  function ghostDemo(it, cv) {
+    wsDemos++;
+    let sib = null;
+    try { sib = makeItem(GRAPH.byId.get(it.conceptId), it.rung); } catch {}
+    if (!sib || !(sib.hints && sib.hints.length)) return;
+    const ctx = cv.getContext('2d');
+    ctx.font = '22px "Comic Sans MS", "Segoe Print", "Brush Script MT", cursive';
+    ctx.fillStyle = '#64748b';
+    const lines = [`like this: ${sib.stem}`, ...sib.hints, sib.explain, 'now you try yours! ✏️'].filter(Boolean);
+    let li = 0, ci = 0, y = 28;
+    (function tick() {
+      if (li >= lines.length) return;
+      const line = lines[li];
+      ci++;
+      ctx.clearRect(0, y - 22, cv.width, 28);
+      ctx.fillText(line.slice(0, ci), 14, y);
+      if (ci >= line.length) { li++; ci = 0; y += 30; }
+      setTimeout(tick, 55);
+    })();
+  }
+
+  // 💡 button feeds the shared staged hint ladder (manual taps never hurt)
+  function wireHints() {
     const btn = document.getElementById('hintBtn');
-    const zone = document.getElementById('hintzone');
-    let n = 0;
-    btn.onclick = () => {
-      armNudge();
-      n++;
-      zone.innerHTML = n <= levels.length
-        ? `<div style="margin-top:12px;background:#eef2ff;border-radius:14px;padding:10px 14px;font-size:1rem">💡 ${esc(levels[n - 1])}</div>`
-        : `<div style="margin-top:12px;background:#eef2ff;border-radius:14px;padding:10px 14px;font-size:1rem">💪 That's all the hints — you've got this!</div>`;
-      requestAnimationFrame(() => zone.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
-    };
+    btn.onclick = () => { armNudge(); showHint(); };
   }
 
   function drawMCQ(it) {
@@ -401,7 +463,7 @@ function viewParent() {
       <h3 style="margin:8px 0 4px">Recent sessions</h3>
       <table class="pw">${s.sessions.slice(-7).reverse().map((x) => `<tr><td>${new Date(x.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${x.correct}/${x.total}</td><td>${Math.round(100 * x.correct / x.total)}%</td></tr>`).join('') || '<tr><td class="muted">none yet</td></tr>'}</table>
       <p class="muted" style="font-size:.85rem">Prototype note: this summary, plus coins and streaks, is the stub of the milestone-ledger rewards layer. The maths engine (what's mastered, what's due, what's next) is deliberate and fully local — no AI runs during practice.</p>
-      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.1.9</b> (if this doesn't say v0.1.9, fully close and reopen the app twice)</p>
+      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.0</b> (if this doesn't say v0.2.0, fully close and reopen the app twice)</p>
       <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="bn" class="ghost">${state.settings.bonus ? 'Bonus rounds: ON (tap to turn off)' : 'Bonus rounds: OFF (tap to turn on)'}</button><button id="rst" class="ghost" style="color:#b91c1c">Reset</button></div>
       <button id="bk2" style="margin-top:14px">⬅️ Back</button>
     </div>`);
