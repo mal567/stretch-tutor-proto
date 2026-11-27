@@ -51,7 +51,34 @@ window.addEventListener('error', (e) => {
 const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 function render(html) { $app.innerHTML = html; }
 function el(id) { return document.getElementById(id); }
-const speak = (text) => { try { const u = new SpeechSynthesisUtterance(text); u.lang = 'en-GB'; u.rate = 0.95; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch {} };
+// ---- speech: prefer an English-accent voice; McGroo gets a touch of gravitas
+let voicesReady = false;
+let gbVoices = [];
+function loadVoices() {
+  try {
+    gbVoices = speechSynthesis.getVoices().filter((v) =>
+      /^en(-|_)?GB/i.test(v.lang) || /Google UK English|Daniel|Serena|Kate|United Kingdom/i.test(v.name));
+    voicesReady = gbVoices.length > 0;
+  } catch {}
+}
+if ('speechSynthesis' in window) {
+  loadVoices();
+  speechSynthesis.addEventListener('voiceschanged', loadVoices);
+}
+const speak = (text, opts = {}) => {
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    if (!voicesReady) loadVoices();
+    if (gbVoices.length) {
+      u.voice = gbVoices.find((v) => /Female|Serena|Kate/i.test(v.name)) || gbVoices.find((v) => /Male|Daniel/i.test(v.name)) || gbVoices[0];
+    }
+    u.lang = 'en-GB';
+    u.rate = opts.mcGroo ? 0.92 : 0.95;
+    u.pitch = opts.mcGroo ? 0.8 : 1;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  } catch {}
+};
 // Speech engines mangle maths symbols — say the question in words.
 const speakable = (s) => s
   .replace(/×/g, ' times ')
@@ -78,10 +105,32 @@ async function boot() {
 }
 
 // First-launch McGroo intro: pompous title → forced "Hmmmm" → deflation.
+const MCGROO_SVG = `
+<svg class="mascot" viewBox="0 0 220 220" aria-label="Stretch McGroo peeking round a door">
+  <rect x="62" y="12" width="102" height="196" rx="6" fill="#e2e8f0" stroke="#cbd5e1" stroke-width="2"/>
+  <rect x="74" y="24" width="70" height="172" rx="3" fill="#312e81"/>
+  <g>
+    <path d="M84,64 L92,40 L103,54 L114,36 L125,52 L136,42 L141,64 Z" fill="#f59e0b" stroke="#d97706" stroke-width="1.5" transform="rotate(10 110 55)"/>
+    <circle cx="112" cy="100" r="34" fill="#fbbf24" stroke="#d97706" stroke-width="1.5"/>
+    <ellipse cx="101" cy="94" rx="6" ry="7.5" fill="#fff"/>
+    <ellipse cx="124" cy="94" rx="6" ry="6" fill="#fff"/>
+    <circle cx="102" cy="95" r="2.6" fill="#1e293b"/>
+    <circle cx="125" cy="95" r="2.6" fill="#1e293b"/>
+    <path d="M94,82 Q101,76 108,81" stroke="#92400e" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <path d="M118,78 L132,74" stroke="#92400e" stroke-width="2" stroke-linecap="round"/>
+    <path d="M100,114 Q113,124 126,112" stroke="#92400e" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <circle cx="119" cy="108" r="5.5" fill="none" stroke="#475569" stroke-width="1.6"/>
+    <path d="M119,113.5 L121,122" stroke="#475569" stroke-width="1.6" stroke-linecap="round"/>
+  </g>
+  <rect x="130" y="18" width="16" height="184" rx="4" fill="#4f46e5"/>
+  <circle cx="134" cy="116" r="3" fill="#fbbf24"/>
+  <rect x="146" y="12" width="18" height="196" rx="4" fill="#e2e8f0" stroke="#cbd5e1" stroke-width="2"/>
+</svg>`;
+
 function viewIntro() {
   render(`
     <div class="view" style="justify-content:center;text-align:center;gap:18px">
-      <div style="font-size:5rem" id="masc">🦁</div>
+      <div style="display:flex;justify-content:center">${MCGROO_SVG}</div>
       <h1 id="it1" style="opacity:1;transition:opacity .9s">Hi, I'm Stretch McGroo.</h1>
       <div id="it2" style="display:none;transition:opacity .9s">
         <h2>But you can call me</h2>
@@ -97,17 +146,21 @@ function viewIntro() {
       </div>
     </div>`);
   const fadeOut = (id) => { const e = el(id); e.style.opacity = 0; return new Promise((r) => setTimeout(r, 900)); };
+  speak("Hi, I'm Stretch McGroo.", { mcGroo: true });
   setTimeout(async () => {
     await fadeOut('it1');
     el('it1').style.display = 'none';
     el('it2').style.display = 'block';
+    speak('But you can call me: His Royal Highness, the Eminent, Imperial, and Magnanimous Excellency, Sovereign of the Known and Slightly Suspected Realms, Supreme Architect of Grandiosity, Master of All Beasts of the Earth, and Fishes of the Seas, Sir Stretch McGroo.', { mcGroo: true });
     el('hmm').onclick = async () => {
+      speechSynthesis?.cancel?.();
       await fadeOut('it2');
       el('it2').style.display = 'none';
       el('it3').style.display = 'block';
+      speak("Okay, since it's you, you can just call me Stretch.", { mcGroo: true });
       el('go').onclick = () => { localStorage.setItem('stretchIntroSeen', '1'); viewWelcome(); };
     };
-  }, 1800);
+  }, 2400);
 }
 
 // ---------- welcome ----------
@@ -532,7 +585,7 @@ function viewParent() {
       <h3 style="margin:8px 0 4px">Recent sessions</h3>
       <table class="pw">${s.sessions.slice(-7).reverse().map((x) => `<tr><td>${new Date(x.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${x.correct}/${x.total}</td><td>${Math.round(100 * x.correct / x.total)}%</td></tr>`).join('') || '<tr><td class="muted">none yet</td></tr>'}</table>
       <p class="muted" style="font-size:.85rem">Prototype note: this summary, plus coins and streaks, is the stub of the milestone-ledger rewards layer. The maths engine (what's mastered, what's due, what's next) is deliberate and fully local — no AI runs during practice.</p>
-      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.1</b> (if this doesn't say v0.2.1, fully close and reopen the app twice)</p>
+      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.2</b> (if this doesn't say v0.2.2, fully close and reopen the app twice)</p>
       <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="bn" class="ghost">${state.settings.bonus ? 'Bonus rounds: ON (tap to turn off)' : 'Bonus rounds: OFF (tap to turn on)'}</button><button id="rst" class="ghost" style="color:#b91c1c">Reset</button></div>
       <button id="bk2" style="margin-top:14px">⬅️ Back</button>
     </div>`);
