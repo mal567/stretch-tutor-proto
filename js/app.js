@@ -76,8 +76,8 @@ const speak = (text, opts = {}) => {
       || gbVoices.find((v) => /Male|Daniel/i.test(v.name))
       || gbVoices[0];
     if (pick) { u.voice = pick; u.lang = pick.lang || 'en-GB'; } else { u.lang = 'en-GB'; }
-    u.rate = opts.mcGroo ? 0.92 : 0.95;
-    u.pitch = opts.mcGroo ? 0.8 : 1;
+    u.rate = opts.mcGroo ? 1.05 : 1.08;
+    u.pitch = opts.mcGroo ? 0.95 : 1.1;
     speechSynthesis.cancel();
     setTimeout(() => { try { speechSynthesis.speak(u); } catch {} }, 60);
   } catch {}
@@ -391,7 +391,7 @@ function runMission(plan, opts = {}) {
           <div id="hintzone"></div>
           <div id="nudge" style="display:none;margin-top:12px;background:#fef3c7;border-radius:14px;padding:10px 14px;font-size:1rem">
             ${opts.placement
-              ? 'Take your time 🙂 or tap <b>Not sure yet</b> to move on — either is fine!'
+              ? 'Take your time 🙂 — try ✏️ <b>working out</b> or 💡 <b>help</b> — or tap <b>Not sure yet</b> to move on!'
               : 'Stuck? Try ✏️ or 💡 — or take your best guess, wrong answers help too! 🙂'}
           </div>
           <div id="ansarea"></div>
@@ -402,6 +402,14 @@ function runMission(plan, opts = {}) {
     wireScratchpad(it);
     wireHints();
     if (it.kind === 'mcq') drawMCQ(it); else drawPad(it);
+    // Very first explore question: open the working-out space so the kid
+    // discovers it exists and what it's for (ghost demo shows how to use it).
+    if (opts.placement && i === 0) {
+      el('padBtn').click();
+      const cap = el('wscap');
+      cap.style.display = 'block';
+      cap.innerHTML = '✏️ This is your <b>working-out space</b> — jot down part-sums or numbers here, just like paper. You don\'t have to use it, but it\'s always there when a question feels too big for your head!';
+    }
     armNudge();
   }
 
@@ -605,7 +613,7 @@ function viewParent() {
       <h3 style="margin:8px 0 4px">Recent sessions</h3>
       <table class="pw">${s.sessions.slice(-7).reverse().map((x) => `<tr><td>${new Date(x.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>${x.correct}/${x.total}</td><td>${Math.round(100 * x.correct / x.total)}%</td></tr>`).join('') || '<tr><td class="muted">none yet</td></tr>'}</table>
       <p class="muted" style="font-size:.85rem">Prototype note: this summary, plus coins and streaks, is the stub of the milestone-ledger rewards layer. The maths engine (what's mastered, what's due, what's next) is deliberate and fully local — no AI runs during practice.</p>
-      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.4</b> (if this doesn't say v0.2.4, fully close and reopen the app twice)</p>
+      <p class="muted" style="font-size:.8rem;margin-top:-6px">Version: <b>v0.2.5</b> (if this doesn't say v0.2.5, fully close and reopen the app twice)</p>
       <div class="row"><button id="exp" class="ghost">Export data (JSON)</button><button id="voicetest" class="ghost">🔊 Voice check</button><button id="bn" class="ghost">${state.settings.bonus ? 'Bonus: ON' : 'Bonus: OFF'}</button><button id="rst" class="ghost" style="color:#b91c1c">Reset</button></div>
       <button id="bk2" style="margin-top:14px">⬅️ Back</button>
     </div>`);
